@@ -1,0 +1,202 @@
+1->
+Install:
+Launch mongodb server with port 27011:
+mongod --port 27011
+Lauch mongodb client and connect to server:
+mongo --port 27011
+Import JSON file to mongodb server:
+mongoimport --db db --drop --collection moviepeople10 --file moviepeople-10.json --port 27011
+Retrieve all the doc in client:
+db.moviepeople10.find()
+
+
+Import:
+mongoimport --db db --drop --collection moviepeople3000 --file moviepeople-3000.json --port 27011
+2-> The person named Anabela Teixeira:
+db.moviepeople3000.find(
+	{"person-name": "Teixeira, Anabela"}
+	)
+3-> The birthplace of Steven Spielberg
+db.moviepeople3000.find(
+	{"person-name": "Spielberg, Steven"},
+	{"_id":0,"info.birthnotes":1}
+	)
+4-> The number of people bornin Lisbon
+db.moviepeople3000.find(
+	{"info.birthnotes":{$regex:/Lisbon/}}
+	).count()
+
+5-> The people taller than 170cm:
+db.moviepeople3000.find(
+	{"info.height":{$regex:/(^1((7[1-9])|([8-9][0-9]))|^2[0-9]{2})(.[0-9]*)?\s(cm|Cm|CM|cM)/}},
+	{"info.height":1}
+	)
+
+6-> The names of people whose information contains "Opera"
+First Version:
+db.moviepeople3000.find(function(){
+	function inspectObj(doc) {
+		return Object.keys(doc).some(function(key) {
+			if(Object.prototype.toString.call((doc[key])=='[object Array]')){
+				return (new RegExp(/Opera/).test(doc[key].toString()));
+			}
+			if ( typeof(doc[key]) == "object" ) {
+				return inspectObj(doc[key]);
+			} else {
+				return (new RegExp(/Opera/).test(doc[key]));
+			}
+		});
+	}
+	return inspectObj(this["info"]);
+}).count()
+Second Vesion:
+db.moviepeople3000.find(function(){
+	var self = JSON.stringify(this["info"]);
+	return (new RegExp(/Opera/).test(self));
+}).count()
+Third Version:
+db.moviepeople3000.find({$where:"new RegExp(/Opera/).test(JSON.stringify(this.info))"}).count()
+
+
+7->For each movie person whose birthplace is known, find the latitude, longitude and population of thatcity (if that information exists in the city document)
+function getArrBirthnotes() {
+    var arr = [];
+    JSON.parse(JSON.stringify(db.moviepeople3000.find(
+        function() {
+            if (this["info"]["birthnotes"])
+                return true;
+            return false;
+        }).toArray();)).forEach(function(doc) {
+        arr.push(doc["info"]["birthnotes"][0].split(",")[0]);
+    })
+    return arr.filter((v, i, a) => arr.indexOf(v) === i);
+}
+
+db.cities.find({
+    name: {
+        $in: getArrBirthnotes()
+    }
+}, {
+    "_id": 0,
+    "name": 1,
+    "population": 1,
+    "location": 1
+})
+
+
+8->
+
+mkdir {mongo_replica_1,mongo_replica_2,mongo_replica_3}
+
+mongod --replSet small-movie --dbpath ./mongo_replica_1 --port 27017 --rest 
+mongod --replSet small-movie --dbpath ./mongo_replica_2 --port 27018 --rest 
+mongod --replSet small-movie --dbpath ./mongo_replica_3 --port 27019 --rest 
+mongo --port 27017
+rs.initiate({
+	_id:'small-movie',
+	members:[
+		{_id:1,host:'localhost:27017'},
+		{_id:2,host:'localhost:27018'},
+		{_id:3,host:'localhost:27019'}
+	]
+})
+And then, the rest server(27018 and 27019) will be the secondary server, they will replicat the data from master server,
+we can not directly read the data from secondary server(Si nessariy, rs.slaveOk()), If master server crashed, on the of secondary
+server will be the master auto.
+
+[ReplicationExecutor] transition to RECOVERING[ReplicationExecutor] transition to SECO
+[ReplicationExecutor] could not find member to sync from[ReplicationExecutor] Member localhost:27019 is now in state SECONDARY
+[ReplicationExecutor] could not find member to sync from[ReplicationExecutor] Member localhost:27018 is now in state SECONDARY
+[ReplicationExecutor] Member localhost:27018 is now in state SECONDARY[ReplicationExecutor] Member localhost:27019 is now in state SECONDARY
+[ReplicationExecutor] Starting an election, since we've seen no PRIMARY in the past 10000ms'
+[ReplicationExecutor] conducting a dry run election to see if we could be elected
+[ReplicationExecutor] dry election run succeeded, running for election
+[ReplicationExecutor] election succeeded, assuming primary role in term 1
+[ReplicationExecutor] transition to PRIMARY
+[NetworkInterfaceASIO-Replication-0] Connecting to localhost:27018
+[NetworkInterfaceASIO-Replication-0] Ending connection to host localhost:27018 due to bad connection status; 1 connections to that host remain open
+[initandlisten] connection accepted from 127.0.0.1:60730 #6 (3 connections now open)
+[conn3] end connection 127.0.0.1:60696 (2 connections now open)
+[NetworkInterfaceASIO-Replication-0] Successfully connected to localhost:27018, took 1ms (1 connections now open to localhost:27018)
+[rsSync] transition to primary complete; database writes are now permitted
+[ReplicationExecutor] Member localhost:27017 is now in state PRIMARY
+[ReplicationExecutor] syncing from: localhost:27017
+[initandlisten] connection accepted from 127.0.0.1:60192 #9 (4 connections now open)
+[SyncSourceFeedback] setting syncSourceFeedback to localhost:27017
+[NetworkInterfaceASIO-BGSync-0] Connecting to localhost:27017
+[initandlisten] connection accepted from 127.0.0.1:60194 #10 (5 connections now open)
+[ReplicationExecutor] Member localhost:27017 is now in state PRIMARY
+[conn9] end connection 127.0.0.1:60192 (4 connections now open)
+[initandlisten] connection accepted from 127.0.0.1:60198 #11 (5 connections now open)
+[NetworkInterfaceASIO-BGSync-0] Successfully connected to localhost:27017, took 2ms (1 connections now open to localhost:27017)
+[ReplicationExecutor] syncing from: localhost:27017
+[initandlisten] connection accepted from 127.0.0.1:60200 #12 (6 connections now open)
+[SyncSourceFeedback] setting syncSourceFeedback to localhost:27017
+[NetworkInterfaceASIO-BGSync-0] Connecting to localhost:27017
+[initandlisten] connection accepted from 127.0.0.1:60202 #13 (7 connections now open)
+[conn12] end connection 127.0.0.1:60200 (6 connections now open)
+[initandlisten] connection accepted from 127.0.0.1:60206 #14 (7 connections now open)
+[NetworkInterfaceASIO-BGSync-0] Successfully connected to localhost:27017, took 1ms (1 connections now open to localhost:27017)
+
+9-> 
+[thread1] connection accepted from 127.0.0.1:55304 #7 (3 connections now open)
+[repl writer worker 5] CMD: drop moviepeople.collectionMoviePeople
+[conn7] end connection 127.0.0.1:55304 (3 connections now open)
+
+[thread1] connection accepted from 127.0.0.1:55293 #6 (3 connections now open)
+[conn6] end connection 127.0.0.1:55293 (3 connections now open)
+
+10->
+mongod --shardsvr --dbpath ./mongo_shard_1 --port 27020
+mongod --shardsvr --dbpath ./mongo_shard_2 --port 27021
+mongod --configsvr --dbpath ./mongoconfig --port 27022
+mongos --configdb localhost:27022 --chunkSize 1 --port 27030
+
+mongo localhost:27030/admin
+db.runCommand( { addshard: "localhost:27020" } )
+db.runCommand( { addshard: "localhost:27021" } )
+db.runCommand({ enablesharding: "db"})
+db.runCommand( { shardcollection: "db.cities", key: {name: 1} } )
+mongoimport --db db --collection cities --port 27030 --file cities.json
+
+Output:
+mongod configsvr:
+[conn5] build index on: config.chunks properties: { v: 1, unique: true, key: { ns: 1, min: 1 }, name: "ns_1_min_1", ns: "config.chunks" }
+[conn5] building index using bulk method; build may temporarily use up to 500 megabytes of RAM
+[conn5] build index done.  scanned 0 total records. 0 secs
+[conn5] build index on: config.chunks properties: { v: 1, unique: true, key: { ns: 1, shard: 1, min: 1 }, name: "ns_1_shard_1_min_1", ns: "config.chunks" }
+[conn5]          building index using bulk method; build may temporarily use up to 500 megabytes of RAM
+[conn5] build index done.  scanned 0 total records. 0 secs
+[conn5] build index on: config.chunks properties: { v: 1, unique: true, key: { ns: 1, lastmod: 1 }, name: "ns_1_lastmod_1", ns: "config.chunks" }
+[conn5] building index using bulk method; build may temporarily use up to 500 megabytes of RAM
+[conn5] build index done.  scanned 0 total records. 0 secs
+[conn5] build index on: config.shards properties: { v: 1, unique: true, key: { host: 1 }, name: "host_1", ns: "config.shards" }
+[conn5] building index using bulk method; build may temporarily use up to 500 megabytes of RAM
+[conn5] build index done.  scanned 0 total records. 0 secs
+[conn5] build index on: config.locks properties: { v: 1, key: { ts: 1 }, name: "ts_1", ns: "config.locks" }
+[conn5] building index using bulk method; build may temporarily use up to 500 megabytes of RAM
+[conn5] build index done.  scanned 1 total records. 0 secs
+[conn5] build index on: config.locks properties: { v: 1, key: { state: 1, process: 1 }, name: "state_1_process_1", ns: "config.locks" }
+[conn5] building index using bulk method; build may temporarily use up to 500 megabytes of RAM
+[conn5] build index done.  scanned 1 total records. 0 secs
+[conn5] build index on: config.lockpings properties: { v: 1, key: { ping: 1 }, name: "ping_1", ns: "config.lockpings" }
+[conn5] building index using bulk method; build may temporarily use up to 500 megabytes of RAM
+[conn5] build index done.  scanned 1 total records. 0 secs
+[conn5] build index on: config.tags properties: { v: 1, unique: true, key: { ns: 1, min: 1 }, name: "ns_1_min_1", ns: "config.tags" }
+[conn5] building index using bulk method; build may temporarily use up to 500 megabytes of RAM
+[conn5] build index
+
+shardsvr:
+I SHARDING [LockPinger] cluster localhost:27022 pinged successfully at 2017-10-22T20:34:46.536+0000 by distributed lock pinger 'localhost:27022/vultr.guest:27020:1508703916:-589775284', sleeping for 30000ms
+[migrateThread] Deleter starting delete for: db.cities from { name: "Koāth" } -> { name: "La Balme-de-Sillingy" }, with opId: 2248
+[migrateThread] rangeDeleter deleted 0 documents for db.cities from { name: "Koāth" } -> { name: "La Balme-de-Sillingy" }
+[migrateThread] Waiting for replication to catch up before entering critical section
+[migrateThread] migrate commit succeeded flushing to secondaries for 'db.cities' { name: "Koāth" } -> { name: "La Balme-de-Sillingy" }
+[migrateThread] migrate commit succeeded flushing to secondaries for 'db.cities' { name: "Koāth" } -> { name: "La Balme-de-Sillingy" }
+[migrateThread] about to log metadata event into changelog: { _id: "vultr.guest-2017-10-22T20:31:02.813+0000-59ed0006e101a5ecb3ba1ec1", server: "vultr.guest", clientAddr: "", time: new Date(1508704262813), what: "moveChunk.to", ns: "db.cities", details: { min: { name: "Koāth" }, max: { name: "La Balme-de-Sillingy" }, step 1 of 5: 0, step 2 of 5: 0, step 3 of 5: 45, step 4 of 5: 0, step 5 of 5: 10, note: "success" } }
+
+mongos:
+[Balancer] distributed lock 'balancer/vultr.guest:27030:1508703616:-1759814261' acquired for 'doing balance round', ts : 59ed00ee7820d1bf2610947e
+[Balancer] distributed lock 'balancer/vultr.guest:27030:1508703616:-1759814261' unlocked.
+[Balancer] distributed lock 'balancer/vultr.guest:27030:1508703616:-1759814261' acquired for 'doing balance round', ts : 59ed00f87820d1bf2610947f
+[Balancer] distributed lock 'balancer/vultr.guest:27030:1508703616:-1759814261' unlocked.
